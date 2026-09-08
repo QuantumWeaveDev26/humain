@@ -7,6 +7,7 @@ import {
   AddLeadNoteSchema,
   SearchLeadSchema,
   CreateLeadSchema,
+  RememberSchema,
 } from './schemas';
 import {
   createFollowUp,
@@ -15,7 +16,8 @@ import {
   getTodaysTasks,
   getOverdueTasks,
 } from '@/services/task-service';
-import { searchLead, createLead, addLeadNote, getLeadHistory } from '@/services/lead-service';
+import { searchLead, createLead, addLeadNote, getLeadHistory, findOrCreateLead } from '@/services/lead-service';
+import { addGeneralNote } from '@/services/note-service';
 import { recordAiAction } from '@/services/ai-action-service';
 import { formatTimeInTz, formatFriendlyDateTime, DEFAULT_TIMEZONE } from '@/lib/time';
 
@@ -48,6 +50,7 @@ Today is ${referenceDate.toISOString()} in timezone ${userTimezone}.
 Current local time is ${formatFriendlyDateTime(referenceTime, userTimezone)}.
 The user communicates by voice or text.
 Analyze the user request, identify their intent, and call the appropriate function tool.
+If the user is only noting/remembering something (no scheduling), call add_lead_note or remember; only create_follow_up when there's a clear time/schedule request. Do not turn general statements into tasks.
 Always convert dates/times mentioned relative to today/now into UTC ISO 8601 strings.
 If a reminder offset is mentioned (e.g. "5 minutes before"), compute reminderAt by subtracting that offset from dueAt.
       `.trim();
@@ -300,6 +303,102 @@ If a reminder offset is mentioned (e.g. "5 minutes before"), compute reminderAt 
           data: activity,
           aiActionId: aiAction.id,
           undoable: false,
+        };
+      }
+
+      case 'remember': {
+        const validated = RememberSchema.parse(toolArgs);
+
+        if (validated.leadName) {
+          const lead = await findOrCreateLead(validated.leadName, userId);
+          const activity = await addLeadNote(lead.id, validated.note, userId, 'note');
+
+          let followUpResult: any = null;
+          if (validated.dueAt) {
+            followUpResult = await createFollowUp(
+              {
+                leadName: lead.name,
+                title: `Follow-up ${lead.name}`,
+                description: validated.note,
+                dueAt: validated.dueAt,
+                reminderAt: validated.reminderAt,
+              },
+              userId
+            );
+          }
+
+          let confirmation: string;
+          if (validated.dueAt) {
+            const timeStr = followUpResult?.reminder
+              ? formatTimeInTz(followUpResult.reminder.remind_at, userTimezone)
+              : formatTimeInTz(validated.dueAt, userTimezone);
+            confirmation = `Noted on ${lead.name}'s timeline and I'll remind you at ${timeStr}.`;
+          } else {
+            confirmation = `I saved that to ${lead.name}'s timeline.`;
+          }
+
+          const aiAction = await recordAiAction({
+            userId,
+            commandText,
+            intent: 'remember',
+            toolName: 'remember',
+            inputJson: validated,
+            outputJson: {
+              leadId: lead.id,
+              activityId: activity.id,
+              taskId: followUpResult?.task?.id,
+              reminderId: followUpResult?.reminder?.id,
+            },
+            undoState: followUpResult
+              ? {
+                  type: 'create_follow_up',
+                  taskId: followUpResult.task.id,
+                  reminderId: followUpResult.reminder?.id,
+                }
+              : null,
+            status: 'executed',
+          });
+
+          return {
+            success: true,
+            intent: 'remember',
+            toolName: 'remember',
+            summary: validated.dueAt
+              ? `Note and follow-up added for ${lead.name}`
+              : `Note saved to ${lead.name}'s timeline`,
+            confirmationMessage: confirmation,
+            data: { lead, activity, followUp: followUpResult },
+            aiActionId: aiAction.id,
+            undoable: Boolean(followUpResult),
+            rawToolCall: { name: toolName, args: validated },
+          };
+        }
+
+        // General note (no leadName)
+        const note = await addGeneralNote(validated.note, userId);
+        const confirmation = "I'll remember that for you.";
+
+        const aiAction = await recordAiAction({
+          userId,
+          commandText,
+          intent: 'remember',
+          toolName: 'remember',
+          inputJson: validated,
+          outputJson: { noteId: note.id },
+          undoState: null,
+          status: 'executed',
+        });
+
+        return {
+          success: true,
+          intent: 'remember',
+          toolName: 'remember',
+          summary: "I'll remember that for you.",
+          confirmationMessage: confirmation,
+          data: { note },
+          aiActionId: aiAction.id,
+          undoable: false,
+          rawToolCall: { name: toolName, args: validated },
         };
       }
 

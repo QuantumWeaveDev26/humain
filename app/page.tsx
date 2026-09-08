@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { CommandBar } from '@/components/command-bar';
 import { ConfirmationCard } from '@/components/confirmation-card';
 import { MyFocusBoard } from '@/components/my-focus-board';
+import { RememberList } from '@/components/remember-list';
 import { LeadActivityTimeline } from '@/components/lead-activity-timeline';
 import { AuditLogDrawer } from '@/components/audit-log-drawer';
 import { CommandExecutionResult } from '@/types/assistant';
@@ -23,6 +24,7 @@ export default function MyFocusPage() {
   const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
   const [showAuditDrawer, setShowAuditDrawer] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [notesRefreshKey, setNotesRefreshKey] = useState(0);
 
   // User details
   const userName = 'Abhilash';
@@ -76,8 +78,9 @@ export default function MyFocusPage() {
       const result: CommandExecutionResult = await res.json();
       setLastResult(result);
 
-      // Refresh tasks board after action
+      // Refresh tasks board and notes after action
       await fetchTasks();
+      setNotesRefreshKey(k => k + 1);
     } catch (err: any) {
       setLastResult({
         success: false,
@@ -247,6 +250,11 @@ export default function MyFocusPage() {
             onViewLeadHistory={(id) => setActiveLeadId(id)}
             timezone={userTimezone}
           />
+        </section>
+
+        {/* Remember / General Notes Card */}
+        <section className="w-full">
+          <RememberList refreshTrigger={notesRefreshKey} />
         </section>
       </div>
 

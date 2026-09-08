@@ -96,41 +96,117 @@ export function parseCommandOfflineFallback(
     };
   }
 
-  // Pattern 3: Create follow-up / Remind me to call...
-  // Matches: "Remind me to call Arjun today at 5 PM, five minutes before."
-  // or "Arjun told me he will be free at 5 PM. Remind me 5 minutes before to call him."
+  // Pattern 3: NEW remember branch
+  const rememberTriggerRegex = /\b(remember|note that|make a note|keep in mind|don't forget|dont forget|note down|for the record|fyi|jot down)\b/i;
+  if (rememberTriggerRegex.test(lower)) {
+    // Extract leadName from a capitalized name OR after "about"/"regarding"
+    let leadName: string | undefined;
+
+    const aboutMatch = text.match(/(?:about|regarding)\s+([A-Z][a-z]+)/i);
+    if (aboutMatch) {
+      leadName = aboutMatch[1];
+    } else {
+      const excludedWords = new Set([
+        'remember', 'note', 'make', 'keep', 'dont', 'jot', 'for', 'fyi',
+        'the', 'this', 'that', 'with', 'from', 'and', 'but', 'or', 'to', 'in', 'on', 'at',
+        'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+        'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
+        'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+        'today', 'tomorrow', 'tonight', 'morning', 'afternoon', 'evening', 'night',
+        'review', 'call', 'meeting', 'demo', 'task', 'follow', 'am', 'pm'
+      ]);
+
+      const capMatches = text.match(/\b[A-Z][a-z]+\b/g);
+      if (capMatches) {
+        for (const word of capMatches) {
+          if (!excludedWords.has(word.toLowerCase())) {
+            leadName = word;
+            break;
+          }
+        }
+      }
+    }
+
+    // Only set dueAt when a time/date token is present (reuse calculateDateFromNaturalLanguage); NEVER default notes to 5 PM.
+    const timeDateRegex = /\b(tomorrow|today|tonight|morning|evening|afternoon|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|\d{1,2}(?::\d{2})?\s*(?:am|pm)|o'clock|at\s+\d{1,2})\b/i;
+    let dueAt: string | undefined;
+    let reminderAt: string | undefined;
+
+    if (timeDateRegex.test(text)) {
+      const targetDate = calculateDateFromNaturalLanguage(text, referenceDate, timezone);
+      dueAt = targetDate.toISOString();
+      reminderAt = calculateReminderAt(dueAt, 5);
+    }
+
+    const args: any = {
+      note: text,
+    };
+    if (leadName) args.leadName = leadName;
+    if (dueAt) args.dueAt = dueAt;
+    if (reminderAt) args.reminderAt = reminderAt;
+
+    return {
+      toolName: 'remember',
+      args,
+      confidence: 0.95,
+    };
+  }
+
+  // Pattern 4: SCHEDULE branch (create_follow_up) — GATE it:
+  // only emit create_follow_up when there is a real scheduling signal:
+  // a time/date token (tomorrow|today|tonight|morning|evening|next week|mon..sun|\d(:\d\d)?\s*(am|pm)|o'clock|at \d)
+  // OR an explicit verb (remind|schedule|follow up|call|meet|meeting|demo) together with an extractable lead name.
+  const timeDateTokenRegex = /\b(tomorrow|today|tonight|morning|evening|afternoon|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|\d{1,2}(?::\d{2})?\s*(?:am|pm)|o'clock|at\s+\d{1,2})\b/i;
+  const hasTimeToken = timeDateTokenRegex.test(lower);
+
+  const explicitVerbRegex = /\b(remind|schedule|follow up|follow-up|call|meet|meeting|demo)\b/i;
+  const hasExplicitVerb = explicitVerbRegex.test(lower);
+
   const leadMatch = 
     text.match(/(?:call|to|with|about)\s+([A-Z][a-z]+)/) ||
     text.match(/^([A-Z][a-z]+)\s+(?:told me|said|is free)/i) ||
     text.match(/lead\s+([A-Z][a-z]+)/i);
 
-  const leadName = leadMatch ? leadMatch[1] : 'Unknown';
+  const hasExtractableLead = Boolean(leadMatch && leadMatch[1] && leadMatch[1].toLowerCase() !== 'me');
 
-  // Extract reminder minutes offset: "5 minutes before", "10 min before", "15 minutes before"
-  const reminderOffsetMatch = lower.match(/(\d+)\s*(?:minutes?|mins?)\s+before/);
-  const minutesBefore = reminderOffsetMatch ? parseInt(reminderOffsetMatch[1], 10) : 5;
+  const hasSchedulingSignal = hasTimeToken || (hasExplicitVerb && hasExtractableLead);
 
-  const targetDate = calculateDateFromNaturalLanguage(text, referenceDate, timezone);
-  const dueAtIso = targetDate.toISOString();
-  const reminderAtIso = calculateReminderAt(dueAtIso, minutesBefore);
+  if (hasSchedulingSignal) {
+    const leadName = leadMatch ? leadMatch[1] : 'Unknown';
 
-  // Extract action: Call, Meeting, Demo, Follow-up
-  let action = 'Call';
-  if (lower.includes('meet') || lower.includes('meeting')) action = 'Meeting';
-  else if (lower.includes('demo')) action = 'Demo';
-  else if (lower.includes('email')) action = 'Email';
+    // Extract reminder minutes offset: "5 minutes before", "10 min before", "15 minutes before"
+    const reminderOffsetMatch = lower.match(/(\d+)\s*(?:minutes?|mins?)\s+before/);
+    const minutesBefore = reminderOffsetMatch ? parseInt(reminderOffsetMatch[1], 10) : 5;
 
+    const targetDate = calculateDateFromNaturalLanguage(text, referenceDate, timezone);
+    const dueAtIso = targetDate.toISOString();
+    const reminderAtIso = calculateReminderAt(dueAtIso, minutesBefore);
+
+    // Extract action: Call, Meeting, Demo, Follow-up
+    let action = 'Call';
+    if (lower.includes('meet') || lower.includes('meeting')) action = 'Meeting';
+    else if (lower.includes('demo')) action = 'Demo';
+    else if (lower.includes('email')) action = 'Email';
+
+    return {
+      toolName: 'create_follow_up',
+      args: {
+        leadName,
+        action,
+        dueAt: dueAtIso,
+        reminderAt: reminderAtIso,
+        notes: text,
+        priority: lower.includes('urgent') ? 'urgent' : lower.includes('high') ? 'high' : 'medium',
+      },
+      confidence: 0.95,
+    };
+  }
+
+  // Pattern 5: ELSE -> return toolName 'unknown' (do NOT fabricate a follow-up)
   return {
-    toolName: 'create_follow_up',
-    args: {
-      leadName,
-      action,
-      dueAt: dueAtIso,
-      reminderAt: reminderAtIso,
-      notes: text,
-      priority: lower.includes('urgent') ? 'urgent' : lower.includes('high') ? 'high' : 'medium',
-    },
-    confidence: 0.95,
+    toolName: 'unknown',
+    args: {},
+    confidence: 0.1,
   };
 }
 

@@ -164,4 +164,30 @@ export const aiFunctionDeclarations: FunctionDeclaration[] = [
       properties: {},
     },
   },
+  {
+    name: 'remember',
+    description: 'Records a note, memory, or reminder. If a lead name is present, saves the note to the lead. If a date/time is specified, also creates a scheduled follow-up reminder. If no lead is specified, saves a general memory note.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        note: {
+          type: SchemaType.STRING,
+          description: 'The note or memory content to record.',
+        },
+        leadName: {
+          type: SchemaType.STRING,
+          description: 'Optional name of the contact or lead referenced.',
+        },
+        dueAt: {
+          type: SchemaType.STRING,
+          description: 'Optional ISO 8601 UTC timestamp if a future date/time was specified.',
+        },
+        reminderAt: {
+          type: SchemaType.STRING,
+          description: 'Optional ISO 8601 UTC timestamp for when to trigger a reminder.',
+        },
+      },
+      required: ['note'],
+    },
+  },
 ];

@@ -106,22 +106,34 @@ export async function cancelReminder(reminderId: string, userId: string = 'user-
   return true;
 }
 
+export type PendingReminder = Reminder & { taskTitle?: string; leadName?: string };
+
 /**
  * Retrieves pending reminders that are ready to fire
  */
-export async function getPendingReminders(userId: string = 'user-default'): Promise<Reminder[]> {
+export async function getPendingReminders(userId: string = 'user-default'): Promise<PendingReminder[]> {
   const nowIso = new Date().toISOString();
 
   if (!isSupabaseConfigured()) {
-    return memoryStore.reminders.filter(
-      r => r.status === 'scheduled' && r.remind_at <= nowIso
-    );
+    return memoryStore.reminders
+      .filter(r => r.status === 'scheduled' && r.remind_at <= nowIso)
+      .map(r => {
+        const task = memoryStore.tasks.find(t => t.id === r.task_id);
+        const taskTitle = task?.title;
+        const lead = task?.lead_id ? memoryStore.leads.find(l => l.id === task.lead_id) : undefined;
+        const leadName = lead?.name;
+        return {
+          ...r,
+          taskTitle,
+          leadName,
+        };
+      });
   }
 
   const supabase: any = await createServerSupabaseClient();
   const { data, error } = await supabase
     .from('reminders')
-    .select('*, tasks!inner(assigned_to)')
+    .select('*, tasks!inner(title, assigned_to, lead_id, leads(name))')
     .eq('status', 'scheduled')
     .lte('remind_at', nowIso)
     .eq('tasks.assigned_to', userId);
@@ -131,7 +143,15 @@ export async function getPendingReminders(userId: string = 'user-default'): Prom
     return [];
   }
 
-  return (data as Reminder[]) || [];
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    task_id: r.task_id,
+    remind_at: r.remind_at,
+    status: r.status,
+    created_at: r.created_at,
+    taskTitle: r.tasks?.title,
+    leadName: r.tasks?.leads?.name,
+  }));
 }
 
 /**

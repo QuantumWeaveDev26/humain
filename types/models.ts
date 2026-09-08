@@ -23,3 +23,11 @@ export interface FocusGroupedTasks {
   overdue: TaskWithLead[];
   today: TaskWithLead[];
 }
+
+export interface GeneralNote {
+  id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+}
+

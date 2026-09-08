@@ -1,4 +1,4 @@
-import { Lead, Task, Reminder, LeadActivity, AiAction, AuditLog, TaskWithLead } from '@/types/models';
+import { Lead, Task, Reminder, LeadActivity, AiAction, AuditLog, TaskWithLead, GeneralNote } from '@/types/models';
 import { addMinutes, subMinutes } from 'date-fns';
 
 /**
@@ -6,6 +6,8 @@ import { addMinutes, subMinutes } from 'date-fns';
  * when Supabase connection parameters are not yet provided.
  */
 class MemoryStore {
+  public notes: GeneralNote[] = [];
+
   public leads: Lead[] = [
     {
       id: 'lead-1',
@@ -124,6 +126,7 @@ class MemoryStore {
   public auditLogs: AuditLog[] = [];
 
   public reset() {
+    this.notes = [];
     this.aiActions = [];
     this.auditLogs = [];
   }
@@ -131,6 +134,9 @@ class MemoryStore {
 
 // Global singleton across hot-reloads
 const globalStore = (global as any).__humainMemoryStore || new MemoryStore();
+if (!Array.isArray((globalStore as any).notes)) {
+  (globalStore as any).notes = [];
+}
 if (process.env.NODE_ENV !== 'production') {
   (global as any).__humainMemoryStore = globalStore;
 }

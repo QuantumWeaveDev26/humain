@@ -49,4 +49,44 @@ describe('Command Intent Parsing Tests', () => {
 
     expect(result.toolName).toBe('get_overdue_tasks');
   });
+
+  it('parses "Remember Arjun said to contact him tomorrow at 4 pm" -> remember with lead and time', () => {
+    const command = 'Remember Arjun said to contact him tomorrow at 4 pm';
+    const result = parseCommandOfflineFallback(command, referenceDate, 'Asia/Kolkata');
+
+    expect(result.toolName).toBe('remember');
+    expect(result.args.leadName).toBe('Arjun');
+    expect(result.args.dueAt).toBeDefined();
+    expect(result.args.reminderAt).toBeDefined();
+    // 4 PM IST = 16:00 IST on 2026-09-05 (referenceDate is 2026-09-04)
+    // 16:00 IST = 10:30 UTC
+    expect(result.args.dueAt).toBe('2026-09-05T10:30:00.000Z');
+  });
+
+  it('parses "Remember to review the pricing deck" -> remember without lead or time', () => {
+    const command = 'Remember to review the pricing deck';
+    const result = parseCommandOfflineFallback(command, referenceDate, 'Asia/Kolkata');
+
+    expect(result.toolName).toBe('remember');
+    expect(result.args.leadName).toBeUndefined();
+    expect(result.args.dueAt).toBeUndefined();
+    expect(result.args.reminderAt).toBeUndefined();
+  });
+
+  it('parses non-actionable non-remember text (e.g. "what\'s the weather") -> unknown, NOT create_follow_up', () => {
+    const command = "what's the weather";
+    const result = parseCommandOfflineFallback(command, referenceDate, 'Asia/Kolkata');
+
+    expect(result.toolName).toBe('unknown');
+    expect(result.toolName).not.toBe('create_follow_up');
+  });
+
+  it('parses "Remind me to call Arjun today at 5 PM" -> still create_follow_up', () => {
+    const command = 'Remind me to call Arjun today at 5 PM';
+    const result = parseCommandOfflineFallback(command, referenceDate, 'Asia/Kolkata');
+
+    expect(result.toolName).toBe('create_follow_up');
+    expect(result.args.leadName).toBe('Arjun');
+    expect(result.args.dueAt).toBeDefined();
+  });
 });

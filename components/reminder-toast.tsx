@@ -1,11 +1,19 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Bell, X, Check } from 'lucide-react';
-import { Reminder } from '@/types/models';
+import { PendingReminder } from '@/services/reminder-service';
 
 export function ReminderToast() {
-  const [activeReminder, setActiveReminder] = useState<Reminder | null>(null);
+  const [activeReminder, setActiveReminder] = useState<PendingReminder | null>(null);
+  const notifiedIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Request OS notification permission on mount if default
+    if (typeof window !== 'undefined' && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     // Poll reminders every 15 seconds
@@ -13,9 +21,35 @@ export function ReminderToast() {
       try {
         const res = await fetch('/api/reminders/poll');
         const data = await res.json();
-        if (data.success && data.data && data.data.length > 0) {
-          // Show the first due reminder
-          setActiveReminder(data.data[0]);
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+          const reminders: PendingReminder[] = data.data;
+
+          // Process OS notifications for unnotified reminders
+          for (const rem of reminders) {
+            if (!notifiedIdsRef.current.has(rem.id)) {
+              notifiedIdsRef.current.add(rem.id);
+
+              if (typeof window !== 'undefined' && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                const body = `${rem.taskTitle || 'Follow-up'}${rem.leadName ? ' — ' + rem.leadName : ''} is due now.`;
+                try {
+                  const notification = new Notification('Humain Reminder', {
+                    body,
+                    tag: rem.id,
+                  });
+                  notification.onclick = () => {
+                    window.focus();
+                  };
+                } catch (err) {
+                  console.error('Notification error:', err);
+                }
+              }
+            }
+          }
+
+          // Keep showing the in-app toast for the first due reminder when document is visible
+          if (typeof document !== 'undefined' && !document.hidden) {
+            setActiveReminder(reminders[0]);
+          }
         }
       } catch (err) {
         // Silently fail polling
@@ -46,7 +80,9 @@ export function ReminderToast() {
       <div className="flex-1">
         <h4 className="font-bold text-sm">Follow-up Reminder!</h4>
         <p className="text-xs text-indigo-100 mt-0.5">
-          You have a scheduled follow-up due right now.
+          {activeReminder.taskTitle
+            ? `${activeReminder.taskTitle}${activeReminder.leadName ? ` (${activeReminder.leadName})` : ''} is due now.`
+            : 'You have a scheduled follow-up due right now.'}
         </p>
         <div className="mt-2.5 flex items-center gap-2">
           <button

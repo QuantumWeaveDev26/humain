@@ -5,6 +5,7 @@ export type AIIntent =
   | 'complete_follow_up'
   | 'reschedule_follow_up'
   | 'add_lead_note'
+  | 'remember'
   | 'schedule_reminder'
   | 'get_todays_tasks'
   | 'get_overdue_tasks'

@@ -94,4 +94,65 @@ describe('Task Creation and Follow-up Flow Tests', () => {
     // Verify task was deleted by Undo
     expect(memoryStore.tasks.some(t => t.id === createdTaskId)).toBe(false);
   });
+
+  it('executes "Remember Arjun said to contact him tomorrow at 4 pm" -> note on Arjun + follow-up created tomorrow ~4pm', async () => {
+    const commandText = 'Remember Arjun said to contact him tomorrow at 4 pm';
+    const execResult = await executeAssistantCommand({
+      commandText,
+      userTimezone: 'Asia/Kolkata',
+      referenceTime: '2026-09-04T10:00:00.000Z', // 3:30 PM IST
+      userId: 'user-default',
+    });
+
+    expect(execResult.success).toBe(true);
+    expect(execResult.intent).toBe('remember');
+    expect(execResult.confirmationMessage).toContain('Arjun');
+    expect(execResult.undoable).toBe(true);
+
+    // Note added to Arjun's timeline
+    const arjunActivities = memoryStore.leadActivities.filter(a => a.lead_id === 'lead-1');
+    expect(arjunActivities.some(a => a.content.includes('Remember Arjun said'))).toBe(true);
+
+    // Follow-up task created in memoryStore.tasks
+    const followUpTask = memoryStore.tasks.find(t => t.lead_id === 'lead-1' && t.due_at === '2026-09-05T10:30:00.000Z');
+    expect(followUpTask).toBeDefined();
+    expect(followUpTask?.title).toContain('Arjun');
+  });
+
+  it('executes "Remember to review the pricing deck" -> general note, NO task', async () => {
+    const initialTaskCount = memoryStore.tasks.length;
+    const commandText = 'Remember to review the pricing deck';
+    const execResult = await executeAssistantCommand({
+      commandText,
+      userTimezone: 'Asia/Kolkata',
+      referenceTime: '2026-09-04T10:00:00.000Z',
+      userId: 'user-default',
+    });
+
+    expect(execResult.success).toBe(true);
+    expect(execResult.intent).toBe('remember');
+    expect(execResult.confirmationMessage).toBe("I'll remember that for you.");
+    expect(execResult.undoable).toBe(false);
+
+    // General note added
+    expect(memoryStore.notes.some(n => n.content.includes('Remember to review the pricing deck'))).toBe(true);
+
+    // NO new task created
+    expect(memoryStore.tasks.length).toBe(initialTaskCount);
+  });
+
+  it('executes non-actionable command (e.g. "what\'s the weather") -> unknown, NOT create_follow_up, NO task', async () => {
+    const initialTaskCount = memoryStore.tasks.length;
+    const commandText = "what's the weather";
+    const execResult = await executeAssistantCommand({
+      commandText,
+      userTimezone: 'Asia/Kolkata',
+      referenceTime: '2026-09-04T10:00:00.000Z',
+      userId: 'user-default',
+    });
+
+    expect(execResult.intent).toBe('unknown');
+    expect(execResult.success).toBe(false);
+    expect(memoryStore.tasks.length).toBe(initialTaskCount);
+  });
 });

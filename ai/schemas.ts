@@ -52,9 +52,28 @@ export const HighRiskActionSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const RememberSchema = z.object({
+  note: z.string().min(1, 'Note is required').trim(),
+  leadName: z.string().min(1).optional(),
+  dueAt: z
+    .string()
+    .datetime({ offset: true })
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/))
+    .optional()
+    .describe('UTC or ISO 8601 due timestamp'),
+  reminderAt: z
+    .string()
+    .datetime({ offset: true })
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/))
+    .optional()
+    .describe('UTC or ISO 8601 reminder timestamp'),
+});
+
 export type CreateFollowUpInput = z.infer<typeof CreateFollowUpSchema>;
 export type RescheduleFollowUpInput = z.infer<typeof RescheduleFollowUpSchema>;
 export type CompleteFollowUpInput = z.infer<typeof CompleteFollowUpSchema>;
 export type AddLeadNoteInput = z.infer<typeof AddLeadNoteSchema>;
 export type SearchLeadInput = z.infer<typeof SearchLeadSchema>;
 export type CreateLeadInput = z.infer<typeof CreateLeadSchema>;
+export type RememberInput = z.infer<typeof RememberSchema>;
+
