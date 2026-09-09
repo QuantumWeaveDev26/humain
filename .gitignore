@@ -27,7 +27,5 @@ next-env.d.ts
 .opencode/plugins/october-bus.js
 opencode.json
 .agents/mcp_config.json
-
-# October (generated — context bus / browser MCP)
 .codex/config.toml
 .codex/hooks.json
